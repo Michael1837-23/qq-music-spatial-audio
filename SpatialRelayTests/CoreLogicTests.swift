@@ -4,47 +4,47 @@ import XCTest
 @testable import SpatialRelay
 
 final class CoreLogicTests: XCTestCase {
-    func testSpotifyProcessMatcherAcceptsMainAppAndHelpers() {
+    func testQQProcessMatcherAcceptsOnlyMainAppBundle() {
         XCTAssertTrue(
-            SpotifyProcessMatcher.matches(
-                bundleIdentifier: "com.spotify.client",
-                applicationName: "Spotify"
+            QQMusicProcessMatcher.matches(
+                bundleIdentifier: "com.tencent.QQMusicMac",
+                applicationName: "QQ音乐"
             )
         )
-        XCTAssertTrue(
-            SpotifyProcessMatcher.matches(
-                bundleIdentifier: "com.spotify.client.helper",
-                applicationName: "Spotify Helper (Renderer)"
+        XCTAssertFalse(
+            QQMusicProcessMatcher.matches(
+                bundleIdentifier: "com.apple.WebKit.GPU",
+                applicationName: "QQ音乐 Graphics and Media"
             )
         )
     }
 
-    func testSpotifyProcessMatcherRejectsUnrelatedAudioApps() {
+    func testQQMusicProcessMatcherRejectsUnrelatedAudioApps() {
         XCTAssertFalse(
-            SpotifyProcessMatcher.matches(
+            QQMusicProcessMatcher.matches(
                 bundleIdentifier: "com.apple.Safari",
                 applicationName: "Safari"
             )
         )
         XCTAssertFalse(
-            SpotifyProcessMatcher.matches(
-                bundleIdentifier: "com.example.notspotify",
-                applicationName: "Not Spotify"
+            QQMusicProcessMatcher.matches(
+                bundleIdentifier: "com.apple.WebKit.GPU",
+                applicationName: "Safari Graphics and Media"
             )
         )
         XCTAssertFalse(
-            SpotifyProcessMatcher.matches(
+            QQMusicProcessMatcher.matches(
                 bundleIdentifier: "com.example.audio",
-                applicationName: "Spotify"
+                applicationName: "QQ音乐"
             )
         )
     }
 
-    func testSpotifyProcessMatcherUsesNameOnlyWhenBundleIdentifierIsUnavailable() {
-        XCTAssertTrue(
-            SpotifyProcessMatcher.matches(
+    func testQQProcessMatcherDoesNotFallBackToName() {
+        XCTAssertFalse(
+            QQMusicProcessMatcher.matches(
                 bundleIdentifier: "",
-                applicationName: "Spotify Helper (Renderer)"
+                applicationName: "QQ音乐"
             )
         )
     }
@@ -197,7 +197,7 @@ final class CoreLogicTests: XCTestCase {
     }
 
     func testApplicationBundleContainsStablePrivacyIdentity() {
-        XCTAssertEqual(Bundle.main.bundleIdentifier, "com.shevlfs.SpatialRelay")
+        XCTAssertEqual(Bundle.main.bundleIdentifier, "local.codex.qq-spatial-relay")
         XCTAssertNotNil(Bundle.main.object(forInfoDictionaryKey: "NSAudioCaptureUsageDescription"))
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String, "APPL")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconName") as? String, "AppIcon")

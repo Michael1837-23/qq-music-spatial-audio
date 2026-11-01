@@ -1,78 +1,69 @@
-# Spatial Relay
+# QQ Music Spatial Audio
 
-[![CI](https://github.com/shevlfs/spatial-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/shevlfs/spatial-relay/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+让 Apple 芯片 Mac 上的 QQ 音乐通过 AirPods 使用 macOS 的**空间化立体声**。程序在菜单栏运行，可以选择系统提供的“固定”或“头部追踪”模式。
 
-Spatial Relay is a macOS menu-bar app that routes audio from Spotify Desktop through an Apple playback API that supports Spatialize Stereo. It is intended for AirPods models with Spatial Audio support.
+这是基于 [Spatial Relay](https://github.com/shevlfs/spatial-relay) 的 QQ 音乐适配版。感谢原作者 [shevlfs](https://github.com/shevlfs)；本项目保留上游的 MIT 许可证和版权声明，与腾讯和苹果均无官方关联。
+
+## 工作方式
+
+程序只匹配 QQ 音乐 Mac 客户端的主进程，使用 Core Audio process tap 捕获双声道声音，再通过苹果的 `AVSampleBufferAudioRenderer` 请求系统进行立体声空间化，输出到当前设备。
 
 ```text
-Spotify -> Core Audio process tap -> stereo Float32 PCM ring buffer
-        -> AVSampleBufferAudioRenderer -> current output device
+QQ 音乐 → Core Audio 进程捕获 → 苹果系统空间化播放 → AirPods
 ```
 
-The app runs in the menu bar and has no Dock icon. Closing its panel does not stop an active relay.
+这处理的是 QQ 音乐输出的立体声，不会为普通歌曲添加杜比全景声源文件。系统和耳机可能根据内容、设备及用户设置选择不同的效果；不能保证与 Apple Music 逐样本一致。
 
-## Requirements
+## 设备要求
 
-- Apple silicon Mac
-- macOS 14.2 or later
-- Spatial Audio-capable AirPods
-- Spotify Desktop (`com.spotify.client`)
-- Xcode 16.4 or later when building from source
+- 搭载 Apple 芯片、运行 macOS 14.2 或更新版本的 Mac。
+- 已安装并播放歌曲的 QQ 音乐 Mac 客户端。
+- 已连接并设为系统输出、支持空间音频的 AirPods；其他设备能否使用取决于 macOS 和设备。
+- 构建源码需要 Xcode 16.4 或更新版本。
 
-## Install
+当前版本只匹配 QQ 音乐的 `com.tencent.QQMusicMac` 主进程；如果未来 QQ 音乐改用其他进程输出，本程序可能无法检测到声音。
 
-Prebuilt Apple silicon packages are available on the [Releases page](https://github.com/shevlfs/spatial-relay/releases). Release builds are ad-hoc signed and are not notarized. For a normal Gatekeeper-trusted build, compile the app with your own Apple development identity.
+## 使用
 
-To build locally:
+可在 [Releases](https://github.com/Michael1837-23/qq-music-spatial-audio/releases) 查看可用版本，也可以按下文从源码构建。测试版使用临时签名，**未经 Apple 公证**，macOS 可能阻止直接打开；请勿为了运行它而关闭系统安全保护。
 
-1. Clone the repository.
-2. Open `SpatialRelay.xcodeproj` in Xcode.
-3. Select the **SpatialRelay** scheme and your Mac.
-4. Choose a Development Team if Xcode requests one.
-5. Run the app.
+1. 将 AirPods 连接到 Mac，并设为系统声音输出。
+2. 在 QQ 音乐里播放歌曲，然后打开“QQ 音乐空间音频”。
+3. 点击菜单栏的波形图标，选择“安全检测”，确认程序检测到声音；检测不会静音原声。
+4. 停止检测，选择“开始转播”。首次使用时按系统提示授予音频录制权限。
+5. 在菜单栏的 AirPods 声音菜单中，按需要选择空间音频的“固定”。不同播放会话可能使系统菜单显示不同状态。
 
-## Use
+关闭控制窗口后程序继续在菜单栏运行。点击“立即停止”可结束转播并尝试恢复直接播放；面板中的“…”菜单可以退出程序。切换音频输出设备前建议先停止转播。
 
-1. Connect your AirPods and select them as the Mac's output.
-2. Start playback in Spotify.
-3. Open Spatial Relay from its waveform icon in the menu bar.
-4. Click **Start relay**.
-5. Approve **System Audio Recording** access when macOS asks.
-6. Open the macOS Sound or AirPods menu and select **Fixed** or **Head Tracked** under Spatial Audio.
+## 隐私与音频恢复
 
-Stop the relay before intentionally changing output devices. Use **Quit Spatial Relay** from the ellipsis menu to close the app and restore Spotify's direct output.
+捕获目标在代码中限定为 QQ 音乐主进程。音频在本机内存中缓冲和处理，不保存为文件；源码中没有上传音频的功能。macOS 授予的是系统音频录制权限，权限本身可能允许应用读取其他程序的声音，可以在系统设置中撤销。
 
-## Audio and privacy
+转播期间 QQ 音乐的原始输出会被临时静音，由程序重新输出。正常停止和已处理的失败路径会尝试恢复原声，但异常退出或设备变化仍可能造成短暂无声。如果无声，先点“立即停止”或退出程序，再检查系统声音输出是否为 AirPods。
 
-The relay accepts stereo, native-endian 32-bit floating-point PCM from Core Audio and submits Float32 PCM at the output device's nominal sample rate. It does not add lossy encoding, sample-rate conversion, normalization, EQ, or gain changes. Spotify's own source quality and normalization settings still apply.
+## 从源码构建
 
-Audio remains in a bounded in-memory buffer. It is not written to disk, sent over the network, or collected as telemetry. Spotify's original output is muted only while the process tap is active. Normal stop, quit, and failure paths restore direct output.
-
-Spatial Audio mode changes can briefly reconfigure the renderer. Spatial Relay gives those changes a five-second recovery window, flushes and rebases the render timeline, and stops safely if the output does not recover.
-
-## Development
-
-Run the unit tests from the command line:
-
-```sh
-xcodebuild \
-  -project SpatialRelay.xcodeproj \
-  -scheme SpatialRelay \
-  -configuration Debug \
-  -destination 'platform=macOS,arch=arm64' \
-  CODE_SIGNING_ALLOWED=NO \
-  test
+```bash
+git clone https://github.com/Michael1837-23/qq-music-spatial-audio.git
+cd qq-music-spatial-audio
+xcodebuild -project SpatialRelay.xcodeproj -scheme SpatialRelay \
+  -configuration Release -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath build/DerivedData \
+  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build
 ```
 
-CI runs tests, static analysis, and a Release build on a native arm64 macOS runner. Tags matching `vMAJOR.MINOR.PATCH` build an ad-hoc signed app, verify it, and publish a ZIP and SHA-256 checksum to GitHub Releases.
+应用位于 `build/DerivedData/Build/Products/Release/SpatialRelay.app`。临时签名构建仅供测试；若要分发经过 Apple 公证的版本，需要自行准备开发者签名和公证流程。
 
-The hosted test suite cannot exercise the System Audio Recording prompt, Spotify playback, AirPods routing, or the Spatial Audio menu. Changes to those paths should also be checked on a physical Mac.
+运行单元测试：
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Security reports are covered by [SECURITY.md](SECURITY.md).
+```bash
+xcodebuild -project SpatialRelay.xcodeproj -scheme SpatialRelay \
+  -configuration Debug -destination 'platform=macOS,arch=arm64' \
+  CODE_SIGNING_ALLOWED=NO test
+```
 
-## License
+自动化测试不能代替对系统录制权限、真实耳机、声音恢复和空间音频菜单的实机验证。
 
-Spatial Relay is open source under the [MIT License](LICENSE).
+## 许可证
 
-Spotify, AirPods, Spatial Audio, macOS, and Apple are trademarks of their respective owners. This project is independent and is not affiliated with, endorsed by, or sponsored by Spotify or Apple.
+本项目按 [MIT License](LICENSE) 发布，保留原项目版权声明。QQ 音乐、AirPods、macOS 和 Apple 等名称及商标归各自权利人所有。

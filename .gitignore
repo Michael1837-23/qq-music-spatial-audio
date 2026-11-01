@@ -7,3 +7,8 @@ xcuserdata/
 *.xcresult
 *.dSYM
 *.swp
+
+# Local Xcode and agent build outputs
+.build-*/
+.build-*.log
+work/

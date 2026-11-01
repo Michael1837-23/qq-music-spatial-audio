@@ -12,9 +12,14 @@ struct ContentView: View {
                 messageCard(message)
             }
 
-            if viewModel.isRelaying {
+            if viewModel.isRelaying || viewModel.isProbing {
                 meter
+            }
+
+            if viewModel.isRelaying {
                 spatialAudioHint
+            } else if viewModel.isProbing {
+                probeHint
             } else {
                 privacyHint
             }
@@ -43,9 +48,9 @@ struct ContentView: View {
                 )
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Spatial Relay")
+                Text("QQ 音乐空间音频")
                     .font(.title.bold())
-                Text("Make Spotify stereo eligible for AirPods Spatial Audio")
+                Text("使用苹果系统的空间化立体声")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -56,16 +61,16 @@ struct ContentView: View {
         VStack(spacing: 0) {
             routeRow(
                 icon: "music.note",
-                title: "Spotify",
-                detail: viewModel.spotifyDetail,
-                state: viewModel.spotifyState
+                title: "QQ 音乐",
+                detail: viewModel.qqMusicDetail,
+                state: viewModel.qqMusicState
             )
 
             Divider().padding(.leading, 48)
 
             routeRow(
                 icon: "speaker.wave.2.fill",
-                title: "Output",
+                title: "声音输出",
                 detail: viewModel.outputDetail,
                 state: viewModel.outputState
             )
@@ -119,12 +124,14 @@ struct ContentView: View {
     private var meter: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Relaying Spotify", systemImage: "waveform")
+                Label(viewModel.isProbing ? "正在检测 QQ 音乐音量" : "正在转播 QQ 音乐", systemImage: "waveform")
                     .font(.headline)
                 Spacer()
-                Text(viewModel.latencyLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                if viewModel.isRelaying {
+                    Text(viewModel.latencyLabel)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
 
             GeometryReader { proxy in
@@ -148,7 +155,7 @@ struct ContentView: View {
 
     private var spatialAudioHint: some View {
         Label {
-            Text("Open the Sound or AirPods menu and choose **Fixed** or **Head Tracked** under Spatial Audio.")
+            Text("在菜单栏的 AirPods 声音菜单中，选择空间化立体声的 **固定**。")
         } icon: {
             Image(systemName: "gyroscope")
         }
@@ -156,9 +163,15 @@ struct ContentView: View {
         .foregroundStyle(.secondary)
     }
 
+    private var probeHint: some View {
+        Label("仅检测音量，不会静音或转播 QQ 音乐。", systemImage: "checkmark.shield")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+    }
+
     private var privacyHint: some View {
         Label {
-            Text("The first start asks for System Audio Recording access. Audio stays in memory and is never saved.")
+            Text("首次检测会请求系统音频录制权限。检测不静音；开始转播时会暂时接管 QQ 音乐声音。")
         } icon: {
             Image(systemName: "hand.raised.fill")
         }
@@ -169,21 +182,21 @@ struct ContentView: View {
     private var controls: some View {
         HStack(spacing: 12) {
             Button {
-                viewModel.openSpotify()
+                viewModel.openQQMusic()
             } label: {
-                Label("Open Spotify", systemImage: "arrow.up.forward.app")
+                Label("打开 QQ 音乐", systemImage: "arrow.up.forward.app")
             }
-            .disabled(viewModel.isBusy || viewModel.isRelaying)
+            .disabled(viewModel.isBusy || viewModel.isRelaying || viewModel.isProbing)
 
             Button {
                 viewModel.refresh()
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                Label("刷新", systemImage: "arrow.clockwise")
             }
-            .disabled(viewModel.isBusy || viewModel.isRelaying)
+            .disabled(viewModel.isBusy || viewModel.isRelaying || viewModel.isProbing)
 
             Menu {
-                Button("Quit Spatial Relay", systemImage: "power") {
+                Button("退出", systemImage: "power") {
                     viewModel.quitApplication()
                 }
                 .keyboardShortcut("q")
@@ -193,7 +206,14 @@ struct ContentView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            Spacer()
+            Spacer(minLength: 0)
+
+            Button {
+                viewModel.toggleProbe()
+            } label: {
+                Text(viewModel.isProbing ? "停止检测" : "安全检测")
+            }
+            .disabled(!viewModel.canToggleProbe)
 
             Button {
                 viewModel.toggleRelay()
@@ -202,15 +222,14 @@ struct ContentView: View {
                     ProgressView().controlSize(.small)
                         .frame(minWidth: 92)
                 } else {
-                    Text(viewModel.isRelaying ? "Stop relay" : "Start relay")
+                    Text(viewModel.isRelaying ? "立即停止" : "开始转播")
                         .frame(minWidth: 92)
                 }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(viewModel.isRelaying ? .red : .accentColor)
-            .disabled(!viewModel.canToggleRelay)
-            .keyboardShortcut(.return, modifiers: [])
+            .disabled(!viewModel.canToggleRelay || viewModel.isProbing)
         }
     }
 }

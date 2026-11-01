@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Spatial Relay</string>
+	<string>QQ 音乐空间音频</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Spatial Relay captures Spotify's outgoing audio only while relaying it for AirPods Spatial Audio. Audio is never saved.</string>
+	<string>仅在安全检测或转播时读取 QQ 音乐输出的声音，以检测音频和提供空间化处理。音频在本机内存中处理，不保存。</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

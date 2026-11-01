@@ -1,7 +1,7 @@
 # Security
 
-Security-sensitive bugs include cases where the app captures the wrong process, writes or transmits audio, fails to restore Spotify's direct output, or mishandles macOS permissions.
+Security-sensitive issues include capturing audio from an unintended process, transmitting or saving audio unexpectedly, failing to restore QQ Music's direct output, and mishandling recording permissions.
 
-Please do not publish exploit details in a public issue. Use GitHub's private vulnerability reporting for this repository when available. Otherwise, contact [@shevlfs](https://github.com/shevlfs) through GitHub before sharing sensitive details.
+Please use this repository's private vulnerability reporting feature when it is available. If it is unavailable, contact the repository maintainer privately before disclosing sensitive details. Do not attach recordings, personal information, or credentials to public issues.
 
-Security fixes are made against the latest release and the `main` branch. Older releases may not receive separate patches.
+Fixes are made against the current development branch. Audio-device and system changes should be tested on a real Mac before release.

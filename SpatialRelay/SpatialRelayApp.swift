@@ -6,6 +6,15 @@ private final class SpatialRelayApplicationDelegate: NSObject, NSApplicationDele
     weak var viewModel: RelayViewModel?
     private var terminationReplyIsPending = false
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let viewModel else { return .terminateNow }
         guard !viewModel.isReadyToTerminate else { return .terminateNow }
@@ -32,6 +41,11 @@ struct SpatialRelayApp: App {
     }
 
     var body: some Scene {
+        WindowGroup("QQ 音乐空间音频") {
+            ContentView(viewModel: viewModel)
+                .frame(minWidth: 500, minHeight: 560)
+        }
+
         MenuBarExtra {
             ContentView(viewModel: viewModel)
                 .frame(width: 500, height: 540)

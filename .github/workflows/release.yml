@@ -38,7 +38,7 @@ jobs:
           fi
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "archive=SpatialRelay-$VERSION-arm64.zip" >> "$GITHUB_OUTPUT"
+          echo "archive=QQMusicSpatialAudio-$VERSION-arm64.zip" >> "$GITHUB_OUTPUT"
 
       - name: Test tagged source
         run: |
@@ -72,7 +72,7 @@ jobs:
       - name: Retain release package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: SpatialRelay-${{ steps.metadata.outputs.version }}-arm64
+          name: QQMusicSpatialAudio-${{ steps.metadata.outputs.version }}-arm64
           path: |
             ${{ runner.temp }}/dist/${{ steps.metadata.outputs.archive }}
             ${{ runner.temp }}/dist/${{ steps.metadata.outputs.archive }}.sha256
@@ -97,10 +97,12 @@ jobs:
           else
             gh release create \
               "$GITHUB_REF_NAME" \
-              "$ARCHIVE_PATH#Spatial Relay for Apple silicon" \
+              "$ARCHIVE_PATH#QQ Music Spatial Audio for Apple silicon" \
               "$CHECKSUM_PATH#SHA-256 checksum" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
+              --prerelease \
+              --notes "测试版：仅在有限的 Mac 和 AirPods 组合上验证。此构建为临时签名，未经 Apple 公证。" \
               --generate-notes \
-              --title "Spatial Relay $GITHUB_REF_NAME"
+              --title "QQ Music Spatial Audio $GITHUB_REF_NAME"
           fi

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import MediaPlayer
 
 @MainActor
 final class RelayViewModel: ObservableObject {
@@ -21,12 +22,13 @@ final class RelayViewModel: ObservableObject {
         let text: String
     }
 
-    @Published private(set) var spotifyDetail = "Looking for Spotify…"
-    @Published private(set) var spotifyState: CheckState = .warning
+    @Published private(set) var qqMusicDetail = "Looking for QQ 音乐…"
+    @Published private(set) var qqMusicState: CheckState = .warning
     @Published private(set) var outputDetail = "Looking for the current output…"
     @Published private(set) var outputState: CheckState = .warning
     @Published private(set) var message: Message?
     @Published private(set) var isRelaying = false
+    @Published private(set) var isProbing = false
     @Published private(set) var isBusy = false
     @Published private(set) var meterLevel: CGFloat = 0
     @Published private(set) var latencyLabel = "~80 ms prebuffer"
@@ -53,9 +55,20 @@ final class RelayViewModel: ObservableObject {
 
     var canToggleRelay: Bool {
         if isRelaying { return !isBusy }
-        return !isBusy &&
+        return !isBusy && !isProbing &&
             discovery?.outputDevice != nil &&
-            !(discovery?.spotifyProcesses.isEmpty ?? true)
+            !(discovery?.qqMusicProcesses.isEmpty ?? true)
+    }
+
+    var canToggleProbe: Bool {
+        if isProbing { return !isBusy }
+        return !isBusy && !isRelaying && discovery?.outputDevice != nil &&
+            !(discovery?.qqMusicProcesses.isEmpty ?? true)
+    }
+
+    func toggleProbe() {
+        guard canToggleProbe else { return }
+        if isProbing { stopRelay() } else { start(modeProbe: true) }
     }
 
     var menuBarSymbolName: String {
@@ -76,7 +89,7 @@ final class RelayViewModel: ObservableObject {
         // Reopening the menu-bar window calls this view's onAppear again. Do not
         // make the main actor wait on Core Audio while a permission prompt or
         // pipeline startup is already running on the coordinator queue.
-        guard !isRelaying, !isBusy else { return }
+        guard !isRelaying, !isProbing, !isBusy else { return }
 
         do {
             let discovery = try coordinator.discover()
@@ -85,8 +98,8 @@ final class RelayViewModel: ObservableObject {
             apply(discovery)
         } catch {
             discovery = nil
-            spotifyDetail = "Unable to inspect audio processes"
-            spotifyState = .unavailable
+            qqMusicDetail = "Unable to inspect audio processes"
+            qqMusicState = .unavailable
             outputDetail = "Unable to inspect the current output"
             outputState = .unavailable
             message = Message(kind: .error, text: error.localizedDescription)
@@ -94,6 +107,7 @@ final class RelayViewModel: ObservableObject {
     }
 
     func toggleRelay() {
+        guard canToggleRelay else { return }
         if isRelaying {
             stopRelay()
         } else {
@@ -101,9 +115,9 @@ final class RelayViewModel: ObservableObject {
         }
     }
 
-    func openSpotify() {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") else {
-            message = Message(kind: .error, text: "Spotify is not installed in a location macOS can find.")
+    func openQQMusic() {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.tencent.QQMusicMac") else {
+            message = Message(kind: .error, text: "没有找到 QQ 音乐，请先打开它。")
             return
         }
 
@@ -135,13 +149,15 @@ final class RelayViewModel: ObservableObject {
         meterTimer?.invalidate()
         meterTimer = nil
         isRelaying = false
+        isProbing = false
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         isBusy = true
         meterLevel = 0
 
         // The serial startup queue gives cleanup strict ordering after a tap
         // creation that may still be waiting for the privacy prompt. AppKit's
         // terminate-later reply keeps the process alive, while leaving the main
-        // actor and menu responsive until Spotify has been safely unmuted.
+        // actor and menu responsive until QQ 音乐 has been safely unmuted.
         let coordinator = coordinator
         startupQueue.async { [weak self] in
             _ = coordinator.stop()
@@ -164,6 +180,10 @@ final class RelayViewModel: ObservableObject {
     }
 
     private func startRelay() {
+        start(modeProbe: false)
+    }
+
+    private func start(modeProbe: Bool) {
         isBusy = true
         message = nil
         let operationID = UUID()
@@ -175,11 +195,14 @@ final class RelayViewModel: ObservableObject {
         startupQueue.async { [weak self] in
             let result: Result<RelayDiscovery, Error>
             do {
-                let discovery = try coordinator.start { [weak self] error in
+                let onFailure: @Sendable (Error) -> Void = { [weak self] error in
                     Task { @MainActor in
                         self?.handlePipelineFailure(error)
                     }
                 }
+                let discovery = try modeProbe
+                    ? coordinator.startProbe(onFailure: onFailure)
+                    : coordinator.start(onFailure: onFailure)
                 result = .success(discovery)
             } catch {
                 result = .failure(error)
@@ -187,7 +210,7 @@ final class RelayViewModel: ObservableObject {
 
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.completeStart(result, operationID: operationID)
+                    self?.completeStart(result, operationID: operationID, modeProbe: modeProbe)
                 }
             }
         }
@@ -195,7 +218,8 @@ final class RelayViewModel: ObservableObject {
 
     private func completeStart(
         _ result: Result<RelayDiscovery, Error>,
-        operationID: UUID
+        operationID: UUID,
+        modeProbe: Bool
     ) {
         guard startupOperationID == operationID else { return }
         startupOperationID = nil
@@ -205,7 +229,18 @@ final class RelayViewModel: ObservableObject {
         case .success(let discovery):
             self.discovery = discovery
             apply(discovery)
-            isRelaying = true
+            isRelaying = !modeProbe
+            isProbing = modeProbe
+            if modeProbe {
+                message = Message(kind: .info, text: "安全检测中：QQ 音乐原声保持播放，不进行空间化或输出音频。")
+                startMetering()
+                return
+            }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+                MPMediaItemPropertyTitle: "QQ 音乐空间音频",
+                MPNowPlayingInfoPropertyPlaybackRate: 1.0
+            ]
+            MPNowPlayingInfoCenter.default().playbackState = .playing
             if let output = discovery.outputDevice, !output.isLikelySpatialAudioHeadphones {
                 message = Message(
                     kind: .warning,
@@ -214,13 +249,14 @@ final class RelayViewModel: ObservableObject {
             } else {
                 message = Message(
                     kind: .info,
-                    text: "Relay active. Spatial Audio is now controlled for Spatial Relay in the macOS Sound menu."
+                    text: "转播已开启；请在系统声音菜单中检查空间音频并选择固定。"
                 )
             }
             startMetering()
         case .failure(let error):
             let cleanupFailure = coordinator.stop()
             isRelaying = false
+            isProbing = false
             message = Message(
                 kind: .error,
                 text: startFailureMessage(cleanupFailure ?? error)
@@ -230,24 +266,28 @@ final class RelayViewModel: ObservableObject {
 
     private func stopRelay() {
         startupOperationID = nil
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         isBusy = true
         meterTimer?.invalidate()
         meterTimer = nil
         let cleanupFailure = coordinator.stop()
         isRelaying = false
+        isProbing = false
         meterLevel = 0
         isBusy = false
         message = cleanupFailure.map {
             Message(kind: .error, text: $0.localizedDescription)
-        } ?? Message(kind: .info, text: "Relay stopped. Spotify is playing directly again.")
+        } ?? Message(kind: .info, text: "已停止处理，QQ 音乐应恢复直接播放。")
         refreshRouteRowsPreservingMessage()
     }
 
     private func handlePipelineFailure(_ error: Error) {
         startupOperationID = nil
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         meterTimer?.invalidate()
         meterTimer = nil
         isRelaying = false
+        isProbing = false
         isBusy = false
         meterLevel = 0
         message = Message(kind: .error, text: error.localizedDescription)
@@ -259,7 +299,7 @@ final class RelayViewModel: ObservableObject {
         healthTick = 0
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.isRelaying else { return }
+                guard let self, self.isRelaying || self.isProbing else { return }
 
                 let metrics = self.coordinator.metrics()
                 let shapedPeak = CGFloat(pow(max(0, min(1, metrics.peakLevel)), 0.45))
@@ -281,15 +321,15 @@ final class RelayViewModel: ObservableObject {
     }
 
     private func apply(_ discovery: RelayDiscovery) {
-        if discovery.spotifyProcesses.isEmpty {
-            spotifyDetail = "Open Spotify and start playback"
-            spotifyState = .unavailable
+        if discovery.qqMusicProcesses.isEmpty {
+            qqMusicDetail = "打开 QQ 音乐并开始播放"
+            qqMusicState = .unavailable
         } else {
-            let activeCount = discovery.spotifyProcesses.filter(\.isRunningOutput).count
-            spotifyDetail = activeCount > 0
-                ? "Audio stream detected"
-                : "Connected; waiting for playback"
-            spotifyState = activeCount > 0 ? .ready : .warning
+            let activeCount = discovery.qqMusicProcesses.filter(\.isRunningOutput).count
+            qqMusicDetail = activeCount > 0
+                ? "检测到音频进程正在输出"
+                : "已连接；等待播放"
+            qqMusicState = activeCount > 0 ? .ready : .warning
         }
 
         if let output = discovery.outputDevice {
@@ -305,8 +345,8 @@ final class RelayViewModel: ObservableObject {
         #if !arch(arm64)
         message = Message(kind: .error, text: RelayError.unsupportedMac.localizedDescription)
         #else
-        if discovery.spotifyProcesses.isEmpty {
-            message = Message(kind: .warning, text: "Spotify only appears in Core Audio after it opens an audio stream. Start a song, then click Refresh.")
+        if discovery.qqMusicProcesses.isEmpty {
+            message = Message(kind: .warning, text: "请先在 QQ 音乐播放一首歌，再点刷新。")
         } else if let output = discovery.outputDevice, !output.isLikelySpatialAudioHeadphones {
             message = Message(kind: .warning, text: "The current output does not look like Spatial Audio-capable AirPods. Connect AirPods before starting the relay.")
         } else if !isRelaying {
@@ -323,8 +363,8 @@ final class RelayViewModel: ObservableObject {
             apply(discovery)
         } catch {
             discovery = nil
-            spotifyDetail = "Unable to inspect audio processes"
-            spotifyState = .unavailable
+            qqMusicDetail = "Unable to inspect audio processes"
+            qqMusicState = .unavailable
             outputDetail = "Unable to inspect the current output"
             outputState = .unavailable
         }

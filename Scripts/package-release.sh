@@ -11,10 +11,12 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/build}"
 PROJECT_VERSION="$(
   xcodebuild \
     -project "$PROJECT" \
-    -target "$SCHEME" \
+    -scheme "$SCHEME" \
     -configuration Release \
+    -destination 'platform=macOS,arch=arm64' \
+    -derivedDataPath "$DERIVED_DATA_PATH" \
     -showBuildSettings |
-  awk -F ' = ' '/^[[:space:]]*MARKETING_VERSION = / { print $2; exit }'
+  awk -F ' = ' '/^[[:space:]]*MARKETING_VERSION = / && !found { print $2; found = 1 }'
 )"
 VERSION="${1:-$PROJECT_VERSION}"
 
@@ -48,9 +50,9 @@ xcodebuild -quiet \
   build
 
 SOURCE_APP="$DERIVED_DATA_PATH/Build/Products/Release/SpatialRelay.app"
-PACKAGED_APP="$STAGING_DIR/Spatial Relay.app"
+PACKAGED_APP="$STAGING_DIR/QQ Music Spatial Audio.app"
 EXECUTABLE="$SOURCE_APP/Contents/MacOS/SpatialRelay"
-ARCHIVE="$OUTPUT_DIR/SpatialRelay-$VERSION-arm64.zip"
+ARCHIVE="$OUTPUT_DIR/QQMusicSpatialAudio-$VERSION-arm64.zip"
 CHECKSUM="$ARCHIVE.sha256"
 
 test -d "$SOURCE_APP"
@@ -69,7 +71,7 @@ ditto "$ROOT/LICENSE" "$STAGING_DIR/LICENSE"
 rm -f "$ARCHIVE" "$CHECKSUM"
 (
   cd "$STAGING_DIR"
-  COPYFILE_DISABLE=1 /usr/bin/zip -qry "$ARCHIVE" "Spatial Relay.app" LICENSE
+  COPYFILE_DISABLE=1 /usr/bin/zip -qry "$ARCHIVE" "QQ Music Spatial Audio.app" LICENSE
 )
 
 unzip -t "$ARCHIVE"

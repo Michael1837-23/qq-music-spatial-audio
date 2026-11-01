@@ -24,26 +24,21 @@ struct OutputDeviceInfo: Equatable, Sendable {
     }
 }
 
-enum SpotifyProcessMatcher {
+enum QQMusicProcessMatcher {
     static func matches(bundleIdentifier: String, applicationName: String) -> Bool {
         let bundle = bundleIdentifier
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        if !bundle.isEmpty {
-            return bundle == "com.spotify.client" || bundle.hasPrefix("com.spotify.client.")
-        }
-
-        // Older Core Audio process objects may not expose a bundle identifier.
-        // Only then fall back to the application name.
-        let name = applicationName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return name == "spotify" || name.hasPrefix("spotify helper")
+        // Limit capture to the confirmed QQ Music app bundle. Do not fall back
+        // to a process name or capture the shared WebKit media helper.
+        return bundle == "com.tencent.qqmusicmac"
     }
 }
 
 final class AudioHardwareClient {
     private let systemObject = AudioObjectID(kAudioObjectSystemObject)
 
-    func spotifyProcesses() throws -> [AudioProcessInfo] {
+    func qqMusicProcesses() throws -> [AudioProcessInfo] {
         var address = propertyAddress(kAudioHardwarePropertyProcessObjectList)
         var byteCount: UInt32 = 0
         try CoreAudioFailure.check(
@@ -68,7 +63,7 @@ final class AudioHardwareClient {
             let bundleID = coreAudioBundleID.isEmpty ? (application?.bundleIdentifier ?? "") : coreAudioBundleID
             let applicationName = application?.localizedName ?? ""
 
-            guard SpotifyProcessMatcher.matches(
+            guard QQMusicProcessMatcher.matches(
                 bundleIdentifier: bundleID,
                 applicationName: applicationName
             ) else {
@@ -79,7 +74,7 @@ final class AudioHardwareClient {
                 id: objectID,
                 pid: pid,
                 bundleIdentifier: bundleID,
-                applicationName: applicationName.isEmpty ? "Spotify" : applicationName,
+                applicationName: applicationName.isEmpty ? "QQ 音乐" : applicationName,
                 isRunningOutput: (try? readBool(objectID, selector: kAudioProcessPropertyIsRunningOutput)) ?? false
             )
         }
@@ -112,22 +107,22 @@ final class AudioHardwareClient {
         )
     }
 
-    func createSpotifyTap(processes: [AudioProcessInfo], outputDevice: OutputDeviceInfo) throws -> AudioObjectID {
+    func createQQMusicTap(processes: [AudioProcessInfo], outputDevice: OutputDeviceInfo, muted: Bool) throws -> AudioObjectID {
         let description = CATapDescription()
-        description.name = "Spatial Relay — Spotify"
+        description.name = "Spatial Relay — QQ Music"
         description.processes = processes.map(\.id)
         description.isPrivate = true
         description.isExclusive = false
         description.isMixdown = true
         description.isMono = false
-        description.muteBehavior = .mutedWhenTapped
+        description.muteBehavior = muted ? .mutedWhenTapped : .unmuted
         description.deviceUID = outputDevice.uid
         description.stream = 0
 
         var tapID = AudioObjectID(kAudioObjectUnknown)
         try CoreAudioFailure.check(
             AudioHardwareCreateProcessTap(description, &tapID),
-            operation: "Creating the Spotify process tap"
+            operation: "Creating the QQ 音乐 process tap"
         )
         return tapID
     }

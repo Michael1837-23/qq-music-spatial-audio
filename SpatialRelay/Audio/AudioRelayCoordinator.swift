@@ -2,7 +2,7 @@ import CoreAudio
 import Foundation
 
 struct RelayDiscovery: Sendable {
-    let spotifyProcesses: [AudioProcessInfo]
+    let qqMusicProcesses: [AudioProcessInfo]
     let outputDevice: OutputDeviceInfo?
 }
 
@@ -29,6 +29,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
     private var sampleRateMismatchStartTime: DispatchTime?
 
     private var isActive = false
+    private var isProbing = false
 
     init() {
         controlQueue.setSpecific(key: controlQueueKey, value: 1)
@@ -41,7 +42,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
     func discover() throws -> RelayDiscovery {
         try performSync {
             RelayDiscovery(
-                spotifyProcesses: try hardware.spotifyProcesses(),
+                qqMusicProcesses: try hardware.qqMusicProcesses(),
                 outputDevice: try? hardware.defaultOutputDevice()
             )
         }
@@ -50,11 +51,19 @@ final class AudioRelayCoordinator: @unchecked Sendable {
     @discardableResult
     func start(onFailure: @escaping @Sendable (Error) -> Void) throws -> RelayDiscovery {
         try performSync {
-            try startPipeline(onFailure: onFailure)
+            try startPipeline(probe: false, onFailure: onFailure)
         }
     }
 
-    private func startPipeline(onFailure: @escaping @Sendable (Error) -> Void) throws -> RelayDiscovery {
+    /// A non-muting signal probe: the original app keeps playing normally and
+    /// captured frames are inspected only, never sent to an output renderer.
+    func startProbe(onFailure: @escaping @Sendable (Error) -> Void) throws -> RelayDiscovery {
+        try performSync {
+            try startPipeline(probe: true, onFailure: onFailure)
+        }
+    }
+
+    private func startPipeline(probe: Bool, onFailure: @escaping @Sendable (Error) -> Void) throws -> RelayDiscovery {
         if let cleanupFailure = stopPipeline() {
             throw cleanupFailure
         }
@@ -64,13 +73,13 @@ final class AudioRelayCoordinator: @unchecked Sendable {
         #endif
 
         let output = try hardware.defaultOutputDevice()
-        let processes = try hardware.spotifyProcesses()
+        let processes = try hardware.qqMusicProcesses()
         guard !processes.isEmpty else {
-            throw RelayError.spotifyNotRunning
+            throw RelayError.qqMusicNotRunning
         }
 
         do {
-            tapID = try hardware.createSpotifyTap(processes: processes, outputDevice: output)
+            tapID = try hardware.createQQMusicTap(processes: processes, outputDevice: output, muted: !probe)
             let format = try hardware.tapFormat(tapID)
             guard abs(format.mSampleRate - output.sampleRate) <= 0.5 else {
                 throw RelayError.unsupportedTapFormat(
@@ -81,19 +90,22 @@ final class AudioRelayCoordinator: @unchecked Sendable {
             aggregateID = try hardware.createAggregateDevice(tapUID: uid)
 
             let capture = SRAudioCaptureBridge()
-            let player = try SampleBufferPlayer(
-                capture: capture,
-                sampleRate: format.mSampleRate,
-                outputDeviceUID: output.uid
-            ) { [weak self] error in
-                guard let self else { return }
-                self.controlQueue.async { [weak self] in
-                    guard let self, self.isActive else { return }
-                    // Flush playback before stopping the tap, then immediately release
-                    // mutedWhenTapped so Spotify's direct output is restored.
-                    let cleanupFailure = self.stopPipeline()
-                    DispatchQueue.main.async {
-                        onFailure(cleanupFailure ?? error)
+            let player: SampleBufferPlayer?
+            if probe {
+                player = nil
+            } else {
+                player = try SampleBufferPlayer(
+                    capture: capture,
+                    sampleRate: format.mSampleRate,
+                    outputDeviceUID: output.uid
+                ) { [weak self] error in
+                    guard let self else { return }
+                    self.controlQueue.async { [weak self] in
+                        guard let self, self.isActive else { return }
+                        let cleanupFailure = self.stopPipeline()
+                        DispatchQueue.main.async {
+                            onFailure(cleanupFailure ?? error)
+                        }
                     }
                 }
             }
@@ -106,7 +118,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
             } catch {
                 throw RelayError.captureFailed(error.localizedDescription)
             }
-            player.start()
+            player?.start()
 
             activeOutput = output
             activeProcessIDs = Set(processes.map(\.id))
@@ -114,9 +126,10 @@ final class AudioRelayCoordinator: @unchecked Sendable {
             lastCapturedFrameCount = capture.capturedFrameCount
             stalledCaptureChecks = 0
             sampleRateMismatchStartTime = nil
+            isProbing = probe
             isActive = true
 
-            return RelayDiscovery(spotifyProcesses: processes, outputDevice: output)
+            return RelayDiscovery(qqMusicProcesses: processes, outputDevice: output)
         } catch {
             let startupFailure = error
             if let cleanupFailure = tearDownPipeline() {
@@ -144,8 +157,17 @@ final class AudioRelayCoordinator: @unchecked Sendable {
                 return RelayMetrics(peakLevel: 0, bufferedMilliseconds: 0, droppedFrameCount: 0)
             }
             let buffered = Double(capture.availableFrameCount) / activeSampleRate * 1_000
+            let peak = capture.peakLevel
+            if isProbing {
+                // Drain only the snapshot already present; nothing is rendered or saved.
+                var remaining = capture.availableFrameCount
+                while remaining > 0 {
+                    guard let chunk = capture.dequeueChunk(withMaximumFrameCount: min(remaining, 4_096)) else { break }
+                    remaining -= chunk.frameCount
+                }
+            }
             return RelayMetrics(
-                peakLevel: capture.peakLevel,
+                peakLevel: peak,
                 bufferedMilliseconds: buffered,
                 droppedFrameCount: capture.droppedFrameCount
             )
@@ -190,15 +212,15 @@ final class AudioRelayCoordinator: @unchecked Sendable {
                 sampleRateMismatchStartTime = nil
             }
 
-            let processes = try hardware.spotifyProcesses()
+            let processes = try hardware.qqMusicProcesses()
             let processIDs = Set(processes.map(\.id))
             if activeProcessIDs.isDisjoint(with: processIDs) {
-                return RelayError.captureFailed("Spotify replaced its audio process")
+                return RelayError.captureFailed("QQ 音乐 replaced its audio process")
             }
 
             let runningOutputIDs = Set(processes.filter(\.isRunningOutput).map(\.id))
             if !runningOutputIDs.isEmpty && !runningOutputIDs.isSubset(of: activeProcessIDs) {
-                return RelayError.captureFailed("Spotify moved playback to a new audio process")
+                return RelayError.captureFailed("QQ 音乐 moved playback to a new audio process")
             }
 
             if !runningOutputIDs.isEmpty, let capture {
@@ -233,7 +255,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
 
     private func tearDownPipeline() -> Error? {
         // Order matters: discard queued relay audio, stop reading (which un-mutes
-        // Spotify), then destroy the aggregate device and process tap.
+        // QQ 音乐), then destroy the aggregate device and process tap.
         var cleanupProblems: [String] = []
 
         player?.stop()
@@ -293,6 +315,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
         activeOutput = nil
         activeProcessIDs.removeAll()
         activeSampleRate = 0
+        isProbing = false
         lastCapturedFrameCount = 0
         stalledCaptureChecks = 0
         sampleRateMismatchStartTime = nil

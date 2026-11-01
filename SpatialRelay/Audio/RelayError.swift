@@ -2,8 +2,8 @@ import Foundation
 
 enum RelayError: LocalizedError {
     case unsupportedMac
-    case spotifyNotRunning
-    case spotifyNotProducingAudio
+    case qqMusicNotRunning
+    case qqMusicNotProducingAudio
     case noOutputDevice
     case unsupportedTapFormat(String)
     case rendererFailed(String)
@@ -14,20 +14,20 @@ enum RelayError: LocalizedError {
         switch self {
         case .unsupportedMac:
             "Spatial Audio on Mac requires Apple silicon."
-        case .spotifyNotRunning:
-            "Spotify is not connected to the Mac audio system. Open Spotify and start a song, then refresh."
-        case .spotifyNotProducingAudio:
-            "Spotify is open but no active output stream was found. Start playback, then try again."
+        case .qqMusicNotRunning:
+            "没有找到 QQ 音乐的音频进程。请先播放歌曲，然后刷新。"
+        case .qqMusicNotProducingAudio:
+            "QQ 音乐尚未输出声音，请播放歌曲后重试。"
         case .noOutputDevice:
             "macOS has no default audio output device."
         case .unsupportedTapFormat(let detail):
-            "Spotify produced an audio format this relay cannot handle (\(detail))."
+            "QQ 音乐的音频格式无法处理（\(detail)）。"
         case .rendererFailed(let detail):
-            "The spatial audio renderer stopped (\(detail)). Spotify output has been restored."
+            "空间音频渲染已停止（\(detail)）；程序已尝试恢复 QQ 音乐原声。"
         case .captureFailed(let detail):
-            "Spotify audio capture failed (\(detail))."
+            "QQ 音乐音频捕获失败（\(detail)）。"
         case .cleanupFailed(let detail):
-            "Spatial Relay could not fully release the audio tap (\(detail)). It attempted to restore Spotify output; quit the app before retrying."
+            "音频捕获未能完全释放（\(detail)）。程序已尝试恢复原声；请退出应用后再试。"
         }
     }
 }

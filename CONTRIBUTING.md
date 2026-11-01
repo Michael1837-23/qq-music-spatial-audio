@@ -7,7 +7,7 @@ Issues and pull requests are welcome.
 - Keep changes focused and explain the user-visible effect.
 - Add or update tests for logic changes.
 - Do not commit build products, signing credentials, Xcode user data, or captured audio.
-- Preserve the rule that Spotify is unmuted on every stop and failure path.
+- Preserve the rule that QQ Music is unmuted on every stop and failure path.
 - For audio-routing changes, describe any real-device testing you performed.
 
 Run the test suite:

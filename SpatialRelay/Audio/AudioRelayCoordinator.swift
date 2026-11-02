@@ -2,7 +2,7 @@ import CoreAudio
 import Foundation
 
 struct RelayDiscovery: Sendable {
-    let qqMusicProcesses: [AudioProcessInfo]
+    let audioProcesses: [AudioProcessInfo]
     let outputDevice: OutputDeviceInfo?
 }
 
@@ -22,6 +22,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
     private var capture: SRAudioCaptureBridge?
     private var player: SampleBufferPlayer?
     private var activeOutput: OutputDeviceInfo?
+    private var excludedProcessID = AudioObjectID(kAudioObjectUnknown)
     private var activeProcessIDs = Set<AudioObjectID>()
     private var activeSampleRate: Double = 0
     private var lastCapturedFrameCount: UInt64 = 0
@@ -42,7 +43,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
     func discover() throws -> RelayDiscovery {
         try performSync {
             RelayDiscovery(
-                qqMusicProcesses: try hardware.qqMusicProcesses(),
+                audioProcesses: try hardware.audioProcesses(),
                 outputDevice: try? hardware.defaultOutputDevice()
             )
         }
@@ -73,13 +74,12 @@ final class AudioRelayCoordinator: @unchecked Sendable {
         #endif
 
         let output = try hardware.defaultOutputDevice()
-        let processes = try hardware.qqMusicProcesses()
-        guard !processes.isEmpty else {
-            throw RelayError.qqMusicNotRunning
-        }
+        let processes = try hardware.audioProcesses()
+        let ownProcess = try hardware.ownProcessObject()
+        let activeProcesses = Set(processes.filter(\.isRunningOutput).map(\.id)).subtracting([ownProcess])
 
         do {
-            tapID = try hardware.createQQMusicTap(processes: processes, outputDevice: output, muted: !probe)
+            tapID = try hardware.createSystemAudioTap(processes: activeProcesses.sorted(), outputDevice: output, muted: !probe)
             let format = try hardware.tapFormat(tapID)
             guard abs(format.mSampleRate - output.sampleRate) <= 0.5 else {
                 throw RelayError.unsupportedTapFormat(
@@ -121,7 +121,8 @@ final class AudioRelayCoordinator: @unchecked Sendable {
             player?.start()
 
             activeOutput = output
-            activeProcessIDs = Set(processes.map(\.id))
+            excludedProcessID = ownProcess
+            activeProcessIDs = activeProcesses
             activeSampleRate = format.mSampleRate
             lastCapturedFrameCount = capture.capturedFrameCount
             stalledCaptureChecks = 0
@@ -129,7 +130,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
             isProbing = probe
             isActive = true
 
-            return RelayDiscovery(qqMusicProcesses: processes, outputDevice: output)
+            return RelayDiscovery(audioProcesses: processes, outputDevice: output)
         } catch {
             let startupFailure = error
             if let cleanupFailure = tearDownPipeline() {
@@ -212,15 +213,14 @@ final class AudioRelayCoordinator: @unchecked Sendable {
                 sampleRateMismatchStartTime = nil
             }
 
-            let processes = try hardware.qqMusicProcesses()
-            let processIDs = Set(processes.map(\.id))
-            if activeProcessIDs.isDisjoint(with: processIDs) {
-                return RelayError.captureFailed("QQ 音乐 replaced its audio process")
+            guard try hardware.ownProcessObject() == excludedProcessID else {
+                return RelayError.captureFailed("转播程序的音频进程发生变化，已停止以避免回声")
             }
-
-            let runningOutputIDs = Set(processes.filter(\.isRunningOutput).map(\.id))
-            if !runningOutputIDs.isEmpty && !runningOutputIDs.isSubset(of: activeProcessIDs) {
-                return RelayError.captureFailed("QQ 音乐 moved playback to a new audio process")
+            let processes = try hardware.audioProcesses()
+            let runningOutputIDs = Set(processes.filter(\.isRunningOutput).map(\.id)).subtracting([excludedProcessID])
+            if runningOutputIDs != activeProcessIDs {
+                try hardware.updateTapProcesses(tapID, processes: runningOutputIDs.sorted())
+                activeProcessIDs = runningOutputIDs
             }
 
             if !runningOutputIDs.isEmpty, let capture {
@@ -254,8 +254,8 @@ final class AudioRelayCoordinator: @unchecked Sendable {
     }
 
     private func tearDownPipeline() -> Error? {
-        // Order matters: discard queued relay audio, stop reading (which un-mutes
-        // QQ 音乐), then destroy the aggregate device and process tap.
+        // Order matters: discard queued relay audio, stop reading (which unmutes
+        // source apps), then destroy the aggregate device and process tap.
         var cleanupProblems: [String] = []
 
         player?.stop()
@@ -313,6 +313,7 @@ final class AudioRelayCoordinator: @unchecked Sendable {
         }
 
         activeOutput = nil
+        excludedProcessID = kAudioObjectUnknown
         activeProcessIDs.removeAll()
         activeSampleRate = 0
         isProbing = false

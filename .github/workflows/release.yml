@@ -97,12 +97,12 @@ jobs:
           else
             gh release create \
               "$GITHUB_REF_NAME" \
-              "$ARCHIVE_PATH#QQ Music Spatial Audio for Apple silicon" \
+              "$ARCHIVE_PATH#Spatial Audio Relay for Apple silicon" \
               "$CHECKSUM_PATH#SHA-256 checksum" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --prerelease \
-              --notes "测试版：仅在有限的 Mac 和 AirPods 组合上验证。此构建为临时签名，未经 Apple 公证。" \
+              --notes "测试版：支持转播当前输出设备上的应用声音，包括 QQ 音乐和其他播放器；切换时可能有短暂延迟。仅在有限的 Mac 和 AirPods 组合上验证。此构建为临时签名，未经 Apple 公证。" \
               --generate-notes \
-              --title "QQ Music Spatial Audio $GITHUB_REF_NAME"
+              --title "Spatial Audio Relay $GITHUB_REF_NAME"
           fi

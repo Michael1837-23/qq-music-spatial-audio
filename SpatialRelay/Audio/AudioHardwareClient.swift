@@ -24,21 +24,10 @@ struct OutputDeviceInfo: Equatable, Sendable {
     }
 }
 
-enum QQMusicProcessMatcher {
-    static func matches(bundleIdentifier: String, applicationName: String) -> Bool {
-        let bundle = bundleIdentifier
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        // Limit capture to the confirmed QQ Music app bundle. Do not fall back
-        // to a process name or capture the shared WebKit media helper.
-        return bundle == "com.tencent.qqmusicmac"
-    }
-}
-
 final class AudioHardwareClient {
     private let systemObject = AudioObjectID(kAudioObjectSystemObject)
 
-    func qqMusicProcesses() throws -> [AudioProcessInfo] {
+    func audioProcesses() throws -> [AudioProcessInfo] {
         var address = propertyAddress(kAudioHardwarePropertyProcessObjectList)
         var byteCount: UInt32 = 0
         try CoreAudioFailure.check(
@@ -63,18 +52,13 @@ final class AudioHardwareClient {
             let bundleID = coreAudioBundleID.isEmpty ? (application?.bundleIdentifier ?? "") : coreAudioBundleID
             let applicationName = application?.localizedName ?? ""
 
-            guard QQMusicProcessMatcher.matches(
-                bundleIdentifier: bundleID,
-                applicationName: applicationName
-            ) else {
-                return nil
-            }
+            guard pid > 0, pid != getpid() else { return nil }
 
             return AudioProcessInfo(
                 id: objectID,
                 pid: pid,
                 bundleIdentifier: bundleID,
-                applicationName: applicationName.isEmpty ? "QQ 音乐" : applicationName,
+                applicationName: applicationName.isEmpty ? "音频进程" : applicationName,
                 isRunningOutput: (try? readBool(objectID, selector: kAudioProcessPropertyIsRunningOutput)) ?? false
             )
         }
@@ -107,10 +91,37 @@ final class AudioHardwareClient {
         )
     }
 
-    func createQQMusicTap(processes: [AudioProcessInfo], outputDevice: OutputDeviceInfo, muted: Bool) throws -> AudioObjectID {
+    // Do not start a second output engine: it can affect the system's spatial
+    // audio session. Refuse to relay if our process cannot be excluded.
+    func ownProcessObject() throws -> AudioObjectID {
+        var address = propertyAddress(kAudioHardwarePropertyTranslatePIDToProcessObject)
+        var pid = getpid()
+        var objectID = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        try CoreAudioFailure.check(
+            AudioObjectGetPropertyData(systemObject, &address, UInt32(MemoryLayout<pid_t>.size), &pid, &size, &objectID),
+            operation: "Identifying the relay audio process"
+        )
+        guard objectID != kAudioObjectUnknown else {
+            throw RelayError.captureFailed("无法排除转播程序自身，已阻止启动以避免回声")
+        }
+        return objectID
+    }
+
+    func createSystemAudioTap(processes: [AudioObjectID], outputDevice: OutputDeviceInfo, muted: Bool) throws -> AudioObjectID {
+        let description = Self.systemAudioTapDescription(processes: processes, outputDevice: outputDevice, muted: muted)
+        var tapID = AudioObjectID(kAudioObjectUnknown)
+        try CoreAudioFailure.check(
+            AudioHardwareCreateProcessTap(description, &tapID),
+            operation: "Creating the system audio tap"
+        )
+        return tapID
+    }
+
+    static func systemAudioTapDescription(processes: [AudioObjectID], outputDevice: OutputDeviceInfo, muted: Bool) -> CATapDescription {
         let description = CATapDescription()
-        description.name = "Spatial Relay — QQ Music"
-        description.processes = processes.map(\.id)
+        description.name = "Spatial Relay — System Audio"
+        description.processes = processes
         description.isPrivate = true
         description.isExclusive = false
         description.isMixdown = true
@@ -119,12 +130,26 @@ final class AudioHardwareClient {
         description.deviceUID = outputDevice.uid
         description.stream = 0
 
-        var tapID = AudioObjectID(kAudioObjectUnknown)
-        try CoreAudioFailure.check(
-            AudioHardwareCreateProcessTap(description, &tapID),
-            operation: "Creating the QQ 音乐 process tap"
-        )
-        return tapID
+        return description
+    }
+
+    func updateTapProcesses(_ tapID: AudioObjectID, processes: [AudioObjectID]) throws {
+        var address = propertyAddress(kAudioTapPropertyDescription)
+        var description: CATapDescription?
+        var size = UInt32(MemoryLayout<CATapDescription?>.size)
+        let readStatus = withUnsafeMutablePointer(to: &description) { pointer in
+            AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, pointer)
+        }
+        try CoreAudioFailure.check(readStatus, operation: "Reading the active audio tap")
+        guard let description, !description.isExclusive else {
+            throw RelayError.captureFailed("无法安全更新捕获目标")
+        }
+        description.processes = processes
+        var updated: CATapDescription? = description
+        let writeStatus = withUnsafePointer(to: &updated) { pointer in
+            AudioObjectSetPropertyData(tapID, &address, 0, nil, size, pointer)
+        }
+        try CoreAudioFailure.check(writeStatus, operation: "Updating the active audio processes")
     }
 
     func tapUID(_ tapID: AudioObjectID) throws -> String {

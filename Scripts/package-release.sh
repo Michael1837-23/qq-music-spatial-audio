@@ -50,7 +50,7 @@ xcodebuild -quiet \
   build
 
 SOURCE_APP="$DERIVED_DATA_PATH/Build/Products/Release/SpatialRelay.app"
-PACKAGED_APP="$STAGING_DIR/QQ Music Spatial Audio.app"
+PACKAGED_APP="$STAGING_DIR/Spatial Audio Relay.app"
 EXECUTABLE="$SOURCE_APP/Contents/MacOS/SpatialRelay"
 ARCHIVE="$OUTPUT_DIR/QQMusicSpatialAudio-$VERSION-arm64.zip"
 CHECKSUM="$ARCHIVE.sha256"
@@ -71,7 +71,7 @@ ditto "$ROOT/LICENSE" "$STAGING_DIR/LICENSE"
 rm -f "$ARCHIVE" "$CHECKSUM"
 (
   cd "$STAGING_DIR"
-  COPYFILE_DISABLE=1 /usr/bin/zip -qry "$ARCHIVE" "QQ Music Spatial Audio.app" LICENSE
+  COPYFILE_DISABLE=1 /usr/bin/zip -qry "$ARCHIVE" "Spatial Audio Relay.app" LICENSE
 )
 
 unzip -t "$ARCHIVE"

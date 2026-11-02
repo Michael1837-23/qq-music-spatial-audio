@@ -22,8 +22,8 @@ final class RelayViewModel: ObservableObject {
         let text: String
     }
 
-    @Published private(set) var qqMusicDetail = "Looking for QQ 音乐…"
-    @Published private(set) var qqMusicState: CheckState = .warning
+    @Published private(set) var sourceDetail = "正在检测播放声音…"
+    @Published private(set) var sourceState: CheckState = .warning
     @Published private(set) var outputDetail = "Looking for the current output…"
     @Published private(set) var outputState: CheckState = .warning
     @Published private(set) var message: Message?
@@ -55,15 +55,12 @@ final class RelayViewModel: ObservableObject {
 
     var canToggleRelay: Bool {
         if isRelaying { return !isBusy }
-        return !isBusy && !isProbing &&
-            discovery?.outputDevice != nil &&
-            !(discovery?.qqMusicProcesses.isEmpty ?? true)
+        return !isBusy && !isProbing && discovery?.outputDevice != nil
     }
 
     var canToggleProbe: Bool {
         if isProbing { return !isBusy }
-        return !isBusy && !isRelaying && discovery?.outputDevice != nil &&
-            !(discovery?.qqMusicProcesses.isEmpty ?? true)
+        return !isBusy && !isRelaying && discovery?.outputDevice != nil
     }
 
     func toggleProbe() {
@@ -98,8 +95,8 @@ final class RelayViewModel: ObservableObject {
             apply(discovery)
         } catch {
             discovery = nil
-            qqMusicDetail = "Unable to inspect audio processes"
-            qqMusicState = .unavailable
+            sourceDetail = "Unable to inspect audio processes"
+            sourceState = .unavailable
             outputDetail = "Unable to inspect the current output"
             outputState = .unavailable
             message = Message(kind: .error, text: error.localizedDescription)
@@ -112,26 +109,6 @@ final class RelayViewModel: ObservableObject {
             stopRelay()
         } else {
             startRelay()
-        }
-    }
-
-    func openQQMusic() {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.tencent.QQMusicMac") else {
-            message = Message(kind: .error, text: "没有找到 QQ 音乐，请先打开它。")
-            return
-        }
-
-        NSWorkspace.shared.openApplication(at: url, configuration: .init()) { [weak self] _, error in
-            guard let viewModel = self else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak viewModel] in
-                MainActor.assumeIsolated {
-                    if let error {
-                        viewModel?.message = Message(kind: .error, text: error.localizedDescription)
-                    } else {
-                        viewModel?.refresh()
-                    }
-                }
-            }
         }
     }
 
@@ -157,7 +134,7 @@ final class RelayViewModel: ObservableObject {
         // The serial startup queue gives cleanup strict ordering after a tap
         // creation that may still be waiting for the privacy prompt. AppKit's
         // terminate-later reply keeps the process alive, while leaving the main
-        // actor and menu responsive until QQ 音乐 has been safely unmuted.
+        // actor and menu responsive until source audio has been safely unmuted.
         let coordinator = coordinator
         startupQueue.async { [weak self] in
             _ = coordinator.stop()
@@ -232,12 +209,12 @@ final class RelayViewModel: ObservableObject {
             isRelaying = !modeProbe
             isProbing = modeProbe
             if modeProbe {
-                message = Message(kind: .info, text: "安全检测中：QQ 音乐原声保持播放，不进行空间化或输出音频。")
+                message = Message(kind: .info, text: "安全检测中：各应用原声保持播放，不进行空间化或输出音频。")
                 startMetering()
                 return
             }
             MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-                MPMediaItemPropertyTitle: "QQ 音乐空间音频",
+                MPMediaItemPropertyTitle: "空间音频转播",
                 MPNowPlayingInfoPropertyPlaybackRate: 1.0
             ]
             MPNowPlayingInfoCenter.default().playbackState = .playing
@@ -277,7 +254,7 @@ final class RelayViewModel: ObservableObject {
         isBusy = false
         message = cleanupFailure.map {
             Message(kind: .error, text: $0.localizedDescription)
-        } ?? Message(kind: .info, text: "已停止处理，QQ 音乐应恢复直接播放。")
+        } ?? Message(kind: .info, text: "已停止处理，各应用应恢复直接播放。")
         refreshRouteRowsPreservingMessage()
     }
 
@@ -321,15 +298,15 @@ final class RelayViewModel: ObservableObject {
     }
 
     private func apply(_ discovery: RelayDiscovery) {
-        if discovery.qqMusicProcesses.isEmpty {
-            qqMusicDetail = "打开 QQ 音乐并开始播放"
-            qqMusicState = .unavailable
+        if discovery.audioProcesses.isEmpty {
+            sourceDetail = "等待应用播放声音"
+            sourceState = .warning
         } else {
-            let activeCount = discovery.qqMusicProcesses.filter(\.isRunningOutput).count
-            qqMusicDetail = activeCount > 0
+            let activeCount = discovery.audioProcesses.filter(\.isRunningOutput).count
+            sourceDetail = activeCount > 0
                 ? "检测到音频进程正在输出"
-                : "已连接；等待播放"
-            qqMusicState = activeCount > 0 ? .ready : .warning
+                : "等待应用播放声音"
+            sourceState = activeCount > 0 ? .ready : .warning
         }
 
         if let output = discovery.outputDevice {
@@ -345,9 +322,7 @@ final class RelayViewModel: ObservableObject {
         #if !arch(arm64)
         message = Message(kind: .error, text: RelayError.unsupportedMac.localizedDescription)
         #else
-        if discovery.qqMusicProcesses.isEmpty {
-            message = Message(kind: .warning, text: "请先在 QQ 音乐播放一首歌，再点刷新。")
-        } else if let output = discovery.outputDevice, !output.isLikelySpatialAudioHeadphones {
+        if let output = discovery.outputDevice, !output.isLikelySpatialAudioHeadphones {
             message = Message(kind: .warning, text: "The current output does not look like Spatial Audio-capable AirPods. Connect AirPods before starting the relay.")
         } else if !isRelaying {
             message = nil
@@ -363,8 +338,8 @@ final class RelayViewModel: ObservableObject {
             apply(discovery)
         } catch {
             discovery = nil
-            qqMusicDetail = "Unable to inspect audio processes"
-            qqMusicState = .unavailable
+            sourceDetail = "Unable to inspect audio processes"
+            sourceState = .unavailable
             outputDetail = "Unable to inspect the current output"
             outputState = .unavailable
         }

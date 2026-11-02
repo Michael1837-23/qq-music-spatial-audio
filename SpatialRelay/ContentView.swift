@@ -48,7 +48,7 @@ struct ContentView: View {
                 )
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("QQ 音乐空间音频")
+                Text("空间音频转播")
                     .font(.title.bold())
                 Text("使用苹果系统的空间化立体声")
                     .font(.subheadline)
@@ -61,9 +61,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             routeRow(
                 icon: "music.note",
-                title: "QQ 音乐",
-                detail: viewModel.qqMusicDetail,
-                state: viewModel.qqMusicState
+                title: "播放声音",
+                detail: viewModel.sourceDetail,
+                state: viewModel.sourceState
             )
 
             Divider().padding(.leading, 48)
@@ -124,7 +124,7 @@ struct ContentView: View {
     private var meter: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label(viewModel.isProbing ? "正在检测 QQ 音乐音量" : "正在转播 QQ 音乐", systemImage: "waveform")
+                Label(viewModel.isProbing ? "正在检测播放声音" : "正在转播播放声音", systemImage: "waveform")
                     .font(.headline)
                 Spacer()
                 if viewModel.isRelaying {
@@ -164,14 +164,14 @@ struct ContentView: View {
     }
 
     private var probeHint: some View {
-        Label("仅检测音量，不会静音或转播 QQ 音乐。", systemImage: "checkmark.shield")
+        Label("仅检测音量，不会静音或转播其他应用。", systemImage: "checkmark.shield")
             .font(.callout)
             .foregroundStyle(.secondary)
     }
 
     private var privacyHint: some View {
         Label {
-            Text("首次检测会请求系统音频录制权限。检测不静音；开始转播时会暂时接管 QQ 音乐声音。")
+            Text("首次检测会请求系统音频录制权限。转播时会接管当前输出设备的应用声音，可能包括通知和通话。")
         } icon: {
             Image(systemName: "hand.raised.fill")
         }
@@ -181,13 +181,6 @@ struct ContentView: View {
 
     private var controls: some View {
         HStack(spacing: 12) {
-            Button {
-                viewModel.openQQMusic()
-            } label: {
-                Label("打开 QQ 音乐", systemImage: "arrow.up.forward.app")
-            }
-            .disabled(viewModel.isBusy || viewModel.isRelaying || viewModel.isProbing)
-
             Button {
                 viewModel.refresh()
             } label: {

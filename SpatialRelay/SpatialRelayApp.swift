@@ -41,7 +41,7 @@ struct SpatialRelayApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("QQ 音乐空间音频") {
+        WindowGroup("空间音频转播") {
             ContentView(viewModel: viewModel)
                 .frame(minWidth: 500, minHeight: 560)
         }

@@ -4,49 +4,15 @@ import XCTest
 @testable import SpatialRelay
 
 final class CoreLogicTests: XCTestCase {
-    func testQQProcessMatcherAcceptsOnlyMainAppBundle() {
-        XCTAssertTrue(
-            QQMusicProcessMatcher.matches(
-                bundleIdentifier: "com.tencent.QQMusicMac",
-                applicationName: "QQ音乐"
-            )
-        )
-        XCTAssertFalse(
-            QQMusicProcessMatcher.matches(
-                bundleIdentifier: "com.apple.WebKit.GPU",
-                applicationName: "QQ音乐 Graphics and Media"
-            )
-        )
-    }
-
-    func testQQMusicProcessMatcherRejectsUnrelatedAudioApps() {
-        XCTAssertFalse(
-            QQMusicProcessMatcher.matches(
-                bundleIdentifier: "com.apple.Safari",
-                applicationName: "Safari"
-            )
-        )
-        XCTAssertFalse(
-            QQMusicProcessMatcher.matches(
-                bundleIdentifier: "com.apple.WebKit.GPU",
-                applicationName: "Safari Graphics and Media"
-            )
-        )
-        XCTAssertFalse(
-            QQMusicProcessMatcher.matches(
-                bundleIdentifier: "com.example.audio",
-                applicationName: "QQ音乐"
-            )
-        )
-    }
-
-    func testQQProcessMatcherDoesNotFallBackToName() {
-        XCTAssertFalse(
-            QQMusicProcessMatcher.matches(
-                bundleIdentifier: "",
-                applicationName: "QQ音乐"
-            )
-        )
+    func testSystemTapIncludesSpecifiedProcessesAndProbeDoesNotMute() {
+        let output = OutputDeviceInfo(id: 1, uid: "test-output", name: "Test", sampleRate: 48_000)
+        let tap = AudioHardwareClient.systemAudioTapDescription(processes: [42], outputDevice: output, muted: true)
+        XCTAssertFalse(tap.isExclusive)
+        XCTAssertEqual(tap.processes, [42])
+        XCTAssertEqual(tap.deviceUID, output.uid)
+        XCTAssertEqual(tap.muteBehavior, .mutedWhenTapped)
+        let probe = AudioHardwareClient.systemAudioTapDescription(processes: [42], outputDevice: output, muted: false)
+        XCTAssertEqual(probe.muteBehavior, .unmuted)
     }
 
     func testAirPodsOutputDetectionIsCaseInsensitive() {
